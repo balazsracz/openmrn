@@ -1,0 +1,167 @@
+#include "openlcb/TimedDebouncer.hxx"
+#include "utils/async_if_test_helper.hxx"
+
+namespace openlcb {
+namespace {
+
+class TimedDebouncerTest : public AsyncNodeTest {
+protected:
+    TimedDebouncerTest() {
+        loop_.reset(new RefreshLoop(node_, {}));
+    }
+
+    ~TimedDebouncerTest() {
+        wait();
+        if (loop_) {
+            g_executor.sync_run([this](){ loop_->stop(); });
+            wait();
+        }
+    }
+
+    std::unique_ptr<RefreshLoop> loop_;
+};
+
+class SyncNotifiable : public Notifiable {
+public:
+    void notify() override {}
+};
+
+TEST_F(TimedDebouncerTest, Init) {
+    TimedDebouncer::Options opts;
+    opts.debouncer_opts.window_size = 1;
+    opts.debouncer_opts.min_count = 1;
+    opts.on_delay_ms = 0;
+    opts.off_delay_ms = 0;
+    opts.refresh_loop = loop_.get();
+
+    TimedDebouncer d(opts);
+    d.initialize(false);
+    EXPECT_FALSE(d.current_state());
+
+    d.initialize(true);
+    EXPECT_TRUE(d.current_state());
+}
+
+TEST_F(TimedDebouncerTest, DelayedOn) {
+    TimedDebouncer::Options opts;
+    opts.debouncer_opts.window_size = 1;
+    opts.debouncer_opts.min_count = 1;
+    // 60ms delay = 2 ticks (60 / 30)
+    opts.on_delay_ms = 60;
+    opts.off_delay_ms = 0;
+    opts.refresh_loop = loop_.get();
+
+    TimedDebouncer d(opts);
+    d.initialize(false);
+
+    // Input goes high
+    EXPECT_FALSE(d.update_state(true));
+    EXPECT_FALSE(d.current_state());
+
+    SyncNotifiable notify;
+
+    // First tick. Timer should be 2 initially. Decrements to 1.
+    d.poll_33hz(nullptr, &notify);
+    // State should still be false.
+    EXPECT_FALSE(d.update_state(true));
+    EXPECT_FALSE(d.current_state());
+
+    // Second tick. Timer decrements to 0.
+    d.poll_33hz(nullptr, &notify);
+
+    // Now update_state should trigger.
+    EXPECT_TRUE(d.update_state(true));
+    EXPECT_TRUE(d.current_state());
+}
+
+TEST_F(TimedDebouncerTest, DelayedOff) {
+    TimedDebouncer::Options opts;
+    opts.debouncer_opts.window_size = 1;
+    opts.debouncer_opts.min_count = 1;
+    opts.on_delay_ms = 0;
+    // 31ms delay = 2 ticks (31 + 29) / 30 = 2
+    opts.off_delay_ms = 31;
+    opts.refresh_loop = loop_.get();
+
+    TimedDebouncer d(opts);
+    d.initialize(true);
+
+    // Input goes low
+    EXPECT_FALSE(d.update_state(false));
+    EXPECT_TRUE(d.current_state());
+
+    SyncNotifiable notify;
+
+    // First tick.
+    d.poll_33hz(nullptr, &notify);
+    EXPECT_FALSE(d.update_state(false));
+
+    // Second tick.
+    d.poll_33hz(nullptr, &notify);
+    EXPECT_TRUE(d.update_state(false));
+    EXPECT_FALSE(d.current_state());
+}
+
+TEST_F(TimedDebouncerTest, GlitchRejection) {
+    TimedDebouncer::Options opts;
+    opts.debouncer_opts.window_size = 1;
+    opts.debouncer_opts.min_count = 1;
+    opts.on_delay_ms = 60; // 2 ticks
+    opts.off_delay_ms = 0;
+    opts.refresh_loop = loop_.get();
+
+    TimedDebouncer d(opts);
+    d.initialize(false);
+
+    // Input high
+    d.update_state(true);
+
+    SyncNotifiable notify;
+
+    // 1 tick
+    d.poll_33hz(nullptr, &notify);
+
+    // Input goes low (glitch ended).
+    // This should reset the timer because we go back to the current output state (false).
+    d.update_state(false);
+
+    // 2nd tick
+    d.poll_33hz(nullptr, &notify);
+
+    // Output should remain 0.
+    EXPECT_FALSE(d.update_state(false));
+    EXPECT_FALSE(d.current_state());
+
+    // If input goes high again, it should start over.
+    d.update_state(true);
+    d.poll_33hz(nullptr, &notify); // tick 1
+    EXPECT_FALSE(d.update_state(true));
+    d.poll_33hz(nullptr, &notify); // tick 2
+    EXPECT_TRUE(d.update_state(true));
+}
+
+TEST_F(TimedDebouncerTest, DebouncerIntegration) {
+    // Verify that the underlying CountingDebouncer is doing its job.
+    TimedDebouncer::Options opts;
+    // Window 3, min count 2.
+    opts.debouncer_opts.window_size = 3;
+    opts.debouncer_opts.min_count = 2;
+    opts.on_delay_ms = 0;
+    opts.off_delay_ms = 0;
+    opts.refresh_loop = loop_.get();
+
+    TimedDebouncer d(opts);
+    d.initialize(false);
+
+    // 1st sample high. Count = 1. Window = 001. State 0.
+    EXPECT_FALSE(d.update_state(true));
+    EXPECT_FALSE(d.current_state());
+
+    // 2nd sample high. Count = 2. Window = 011. State 1.
+    // Since delays are 0, should transition immediately.
+    EXPECT_TRUE(d.update_state(true));
+    EXPECT_TRUE(d.current_state());
+}
+
+}
+}

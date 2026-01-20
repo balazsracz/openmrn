@@ -59,11 +59,11 @@ public:
     /// @param opts configuration options.
     TimedDebouncer(const Options& opts)
         : ::CountingDebouncer(opts.debouncer_opts)
-        , on_delay_ticks_(ms_to_ticks(opts.on_delay_ms))
-        , off_delay_ticks_(ms_to_ticks(opts.off_delay_ms))
+        , onDelayTicks_(ms_to_ticks(opts.on_delay_ms))
+        , offDelayTicks_(ms_to_ticks(opts.off_delay_ms))
         , timer_(0)
-        , pending_state_(0)
-        , current_output_state_(0)
+        , pendingState_(0)
+        , currentOutputState_(0)
     {
         opts.refresh_loop->add_member(this);
     }
@@ -73,8 +73,8 @@ public:
     void initialize(bool state)
     {
         ::CountingDebouncer::initialize(state);
-        current_output_state_ = state ? 1 : 0;
-        pending_state_ = current_output_state_;
+        currentOutputState_ = state ? 1 : 0;
+        pendingState_ = currentOutputState_;
         timer_ = 0;
     }
 
@@ -88,7 +88,7 @@ public:
     /// @return the current visible (reported) state.
     bool current_state()
     {
-        return current_output_state_;
+        return currentOutputState_;
     }
 
     /// Updates the state based on a new measurement.
@@ -101,24 +101,24 @@ public:
 
         if (cd_changed)
         {
-            if (cd_state == current_output_state_)
+            if (cd_state == currentOutputState_)
             {
                 // We reverted back to the output state before the timer expired.
                 timer_ = 0;
-                pending_state_ = cd_state;
+                pendingState_ = cd_state;
             }
             else
             {
                 // New target state different from output. Start timer.
-                pending_state_ = cd_state;
-                timer_ = pending_state_ ? on_delay_ticks_ : off_delay_ticks_;
+                pendingState_ = cd_state;
+                timer_ = pendingState_ ? onDelayTicks_ : offDelayTicks_;
             }
         }
 
         // Check if we can apply the pending state.
-        if (timer_ == 0 && pending_state_ != current_output_state_)
+        if (timer_ == 0 && pendingState_ != currentOutputState_)
         {
-            current_output_state_ = pending_state_;
+            currentOutputState_ = pendingState_;
             return true;
         }
 
@@ -142,11 +142,11 @@ private:
         return (ms + POLLING_INTERVAL_MS - 1) / POLLING_INTERVAL_MS;
     }
 
-    uint16_t on_delay_ticks_;
-    uint16_t off_delay_ticks_;
+    uint16_t onDelayTicks_;
+    uint16_t offDelayTicks_;
     uint16_t timer_;
-    uint8_t pending_state_ : 1;
-    uint8_t current_output_state_ : 1;
+    uint8_t pendingState_ : 1;
+    uint8_t currentOutputState_ : 1;
 };
 
 } // namespace openlcb

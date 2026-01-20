@@ -142,10 +142,15 @@ private:
         return (ms + POLLING_INTERVAL_MS - 1) / POLLING_INTERVAL_MS;
     }
 
+    /// Number of 33 Hz ticks to wait before declaring a 0->1 transition.
     uint16_t onDelayTicks_;
+    /// Number of 33 Hz ticks to wait before declaring a 1->0 transition.
     uint16_t offDelayTicks_;
+    /// Current countdown timer. If non-zero, the state transition is pending.
     uint16_t timer_;
+    /// The target state we are transitioning to when the timer expires.
     uint8_t pendingState_ : 1;
+    /// The currently reported (visible) state.
     uint8_t currentOutputState_ : 1;
 };
 

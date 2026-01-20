@@ -21,10 +21,21 @@ protected:
     std::unique_ptr<RefreshLoop> loop_;
 };
 
-class SyncNotifiable : public Notifiable {
-public:
-    void notify() override {}
-};
+TEST_F(TimedDebouncerTest, NotificationCalled) {
+    TimedDebouncer::Options opts;
+    opts.debouncer_opts.window_size = 1;
+    opts.debouncer_opts.min_count = 1;
+    opts.on_delay_ms = 0;
+    opts.off_delay_ms = 0;
+    opts.refresh_loop = loop_.get();
+
+    TimedDebouncer d(opts);
+    d.initialize(false);
+
+    SyncNotifiable notify;
+    d.poll_33hz(nullptr, &notify);
+    notify.wait_for_notification();
+}
 
 TEST_F(TimedDebouncerTest, Init) {
     TimedDebouncer::Options opts;

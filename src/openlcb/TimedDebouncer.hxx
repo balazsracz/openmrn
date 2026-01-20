@@ -85,6 +85,15 @@ public:
         initialize(new_state);
     }
 
+    /// Re-creates the debouncer with new options.
+    /// @param opts new options.
+    void reset_options(const Options& opts)
+    {
+        onDelayTicks_ = ms_to_ticks(opts.on_delay_ms);
+        offDelayTicks_ = ms_to_ticks(opts.off_delay_ms);
+        ::CountingDebouncer::reset_options(opts.debouncer_opts);
+    }
+
     /// @return the current visible (reported) state.
     bool current_state()
     {

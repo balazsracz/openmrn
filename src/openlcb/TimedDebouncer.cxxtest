@@ -174,5 +174,53 @@ TEST_F(TimedDebouncerTest, DebouncerIntegration) {
     EXPECT_TRUE(d.current_state());
 }
 
+TEST_F(TimedDebouncerTest, ResetOptions) {
+    TimedDebouncer::Options opts;
+    opts.debouncer_opts.window_size = 1;
+    opts.debouncer_opts.min_count = 1;
+    opts.on_delay_ms = 60; // 2 ticks
+    opts.off_delay_ms = 0;
+    opts.refresh_loop = loop_.get();
+
+    TimedDebouncer d(opts);
+    d.initialize(false);
+
+    // Check delayed ON behavior (inherited from original opts)
+    d.update_state(true);
+    SyncNotifiable notify;
+    d.poll_33hz(nullptr, &notify);
+    EXPECT_FALSE(d.update_state(true));
+    d.poll_33hz(nullptr, &notify);
+    EXPECT_TRUE(d.update_state(true));
+    EXPECT_TRUE(d.current_state());
+
+    // Reset options: change to NO delay for ON, and add delay for OFF.
+    // Pass nullptr for refresh_loop to ensure it's ignored (no crash/double reg).
+    opts.on_delay_ms = 0;
+    opts.off_delay_ms = 60;
+    opts.refresh_loop = nullptr;
+
+    d.reset_options(opts);
+
+    // State should be preserved (it was true)
+    EXPECT_TRUE(d.current_state());
+
+    // Transition to OFF (should now be delayed)
+    d.update_state(false);
+
+    // 1 tick
+    d.poll_33hz(nullptr, &notify);
+    EXPECT_FALSE(d.update_state(false));
+
+    // 2 ticks
+    d.poll_33hz(nullptr, &notify);
+    EXPECT_TRUE(d.update_state(false));
+    EXPECT_FALSE(d.current_state());
+
+    // Transition back to ON (should now be immediate)
+    EXPECT_TRUE(d.update_state(true));
+    EXPECT_TRUE(d.current_state());
+}
+
 }
 }

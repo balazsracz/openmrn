@@ -395,6 +395,24 @@ TEST_F(AsyncMessageCanTests, WriteByMTIIgnoreDatagram)
     ifCan_->global_message_write_flow()->send(b);
 }
 
+TEST_F(AsyncMessageCanTests, GlobalMessageWithZeroPriority)
+{
+    StrictMock<MockMessageHandler> h;
+    EXPECT_CALL(
+        h, handle_message(
+               Pointee(AllOf(Field(&GenMessage::mti, Defs::MTI_EVENT_REPORT),
+                             Field(&GenMessage::payload,
+                                   IsBufferValue(UINT64_C(0x0102030405060708))))),
+               _));
+    ifCan_->dispatcher()->register_handler(&h, 0, 0);
+
+    // X095B422A is the same as X195B422A but with priority bit cleared.
+    // 0x095B422A is 0x195B422A & ~0x10000000
+    send_packet(":X095B422AN0102030405060708;");
+    wait();
+    ifCan_->dispatcher()->unregister_handler(&h, 0, 0);
+}
+
 TEST_F(AsyncMessageCanTests, WriteByMTIGlobalDoesLoopback)
 {
     StrictMock<MockMessageHandler> h;

@@ -492,11 +492,9 @@ public:
     {
         CAN_FILTER = CanMessageData::CAN_EXT_FRAME_FILTER |
             (CanDefs::GLOBAL_ADDRESSED << CanDefs::CAN_FRAME_TYPE_SHIFT) |
-            (CanDefs::NMRANET_MSG << CanDefs::FRAME_TYPE_SHIFT) |
-            (CanDefs::NORMAL_PRIORITY << CanDefs::PRIORITY_SHIFT),
+            (CanDefs::NMRANET_MSG << CanDefs::FRAME_TYPE_SHIFT),
         CAN_MASK = CanMessageData::CAN_EXT_FRAME_MASK |
             CanDefs::CAN_FRAME_TYPE_MASK | CanDefs::FRAME_TYPE_MASK |
-            CanDefs::PRIORITY_MASK |
             (Defs::MTI_ADDRESS_MASK << CanDefs::MTI_SHIFT)
     };
 
@@ -571,11 +569,9 @@ public:
         CAN_FILTER = CanMessageData::CAN_EXT_FRAME_FILTER |
             (CanDefs::GLOBAL_ADDRESSED << CanDefs::CAN_FRAME_TYPE_SHIFT) |
             (CanDefs::NMRANET_MSG << CanDefs::FRAME_TYPE_SHIFT) |
-            (CanDefs::NORMAL_PRIORITY << CanDefs::PRIORITY_SHIFT) |
             (Defs::MTI_ADDRESS_MASK << CanDefs::MTI_SHIFT),
         CAN_MASK = CanMessageData::CAN_EXT_FRAME_MASK |
             CanDefs::CAN_FRAME_TYPE_MASK | CanDefs::FRAME_TYPE_MASK |
-            CanDefs::PRIORITY_MASK |
             (Defs::MTI_ADDRESS_MASK << CanDefs::MTI_SHIFT)
     };
 

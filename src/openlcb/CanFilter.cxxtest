@@ -260,4 +260,154 @@ TEST_F(CanFilterTest, RemovePort)
     EXPECT_TRUE(filter.is_matching(300));
 }
 
+TEST_F(CanFilterTest, AMRRemovesAlias)
+{
+    Context ctxLearn, ctxAMR, ctxTest;
+
+    // Learn 0x456 on port 200.
+    uint32_t idLearn = 0;
+    CanDefs::set_fields(&idLearn, 0x456, Defs::MTI_EVENT_REPORT,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxLearn.data, idLearn, 200);
+    filter.prepare_packet(&ctxLearn.data);
+
+    // Verify unicast works
+    uint32_t idTest = 0;
+    CanDefs::set_fields(&idTest, 0x123, Defs::MTI_VERIFY_NODE_ID_ADDRESSED,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxTest.data, idTest, 100, {0x04, 0x56});
+
+    filter.prepare_packet(&ctxTest.data);
+    EXPECT_TRUE(filter.is_matching(200));
+    EXPECT_FALSE(filter.is_matching(300));
+
+    // Send AMR from 0x456.
+    uint32_t idAMR = CanDefs::set_control_fields(0x456, CanDefs::AMR_FRAME, 0);
+    setup_frame(&ctxAMR.data, idAMR, 200);
+    filter.prepare_packet(&ctxAMR.data);
+
+    // Verify unicast now floods (unknown dest).
+    filter.prepare_packet(&ctxTest.data);
+    EXPECT_TRUE(filter.is_matching(200));
+    EXPECT_TRUE(filter.is_matching(300));
+}
+
+TEST_F(CanFilterTest, CIDDoesNotLearn)
+{
+    Context ctxCID, ctxTest;
+
+    // Send CID from 0x789 on port 200.
+    // CID has frame type 0x14 in shift 24..
+    // Using CanDefs helper logic, a CID frame is sequence of control bits.
+    // Let's manually construct a CID-like ID or use a helper if available.
+    // CID frame: Priority=1 (0x10000000), FrameType=1 (CanFrameType::DATAGRAM_ONE_FRAME?? No)
+    // Actually CID frames are specific.
+    // CanDefs::is_cid_frame checks (can_id >> 24) & 0x1C == 0x14.
+    // 0x14 = 0001 0100.
+    // So bits 28, 27, 26 -> 0, 0, 1? No 0x1C mask is 11100.
+    // Let's use set_control_fields with sequence number? No CID is separate.
+    // But wait, the code uses `is_cid_frame`.
+    // Let's construct a raw ID that satisfies `is_cid_frame`.
+    // (id >> 24) & 0x1C == 0x14.
+    // (id >> 24) must be 0x14 | something.
+    // 0x14 = 20 decimal = 00010100 binary.
+    // So byte 3 of ID (bits 24-31) should have pattern ...10100...
+    // Let's try 0x14000000.
+    uint32_t cid = 0x14000000;
+    CanDefs::set_src(&cid, 0x789);
+    setup_frame(&ctxCID.data, cid, 200);
+
+    // Verify it is recognized as CID.
+    EXPECT_TRUE(CanDefs::is_cid_frame(cid));
+
+    filter.prepare_packet(&ctxCID.data);
+
+    // Verify 0x789 was NOT learned.
+    // Send unicast to 0x789.
+    uint32_t idTest = 0;
+    CanDefs::set_fields(&idTest, 0x123, Defs::MTI_VERIFY_NODE_ID_ADDRESSED,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxTest.data, idTest, 100, {0x07, 0x89});
+
+    filter.prepare_packet(&ctxTest.data);
+
+    // If NOT learned, it floods.
+    EXPECT_TRUE(filter.is_matching(200));
+    EXPECT_TRUE(filter.is_matching(300)); // Should match other ports too
+}
+
+TEST_F(CanFilterTest, AMEFlush)
+{
+    Context ctxLearn, ctxAME, ctxTest;
+
+    // Learn 0x456 on port 200.
+    uint32_t idLearn = 0;
+    CanDefs::set_fields(&idLearn, 0x456, Defs::MTI_EVENT_REPORT,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxLearn.data, idLearn, 200);
+    filter.prepare_packet(&ctxLearn.data);
+
+    // Verify unicast works
+    uint32_t idTest = 0;
+    CanDefs::set_fields(&idTest, 0x123, Defs::MTI_VERIFY_NODE_ID_ADDRESSED,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxTest.data, idTest, 100, {0x04, 0x56});
+    filter.prepare_packet(&ctxTest.data);
+    EXPECT_TRUE(filter.is_matching(200));
+    EXPECT_FALSE(filter.is_matching(300));
+
+    // Send AME (AME_FRAME=0x0702) with DLC=0.
+    uint32_t idAME = CanDefs::set_control_fields(0x123, CanDefs::AME_FRAME, 0);
+    setup_frame(&ctxAME.data, idAME, 100);
+    // dlc is 0 by default in set_control_fields usage within setup_frame?
+    // wait setup_frame sets dlc based on payload size. Payload {} means dlc=0.
+    filter.prepare_packet(&ctxAME.data);
+
+    // Verify table flushed. Unicast should flood.
+    filter.prepare_packet(&ctxTest.data);
+    EXPECT_TRUE(filter.is_matching(200));
+    EXPECT_TRUE(filter.is_matching(300));
+}
+
+TEST_F(CanFilterTest, VerifyNodeGlobalFlush)
+{
+    Context ctxLearn, ctxVNG, ctxTest;
+
+    // Learn 0x456 on port 200.
+    uint32_t idLearn = 0;
+    CanDefs::set_fields(&idLearn, 0x456, Defs::MTI_EVENT_REPORT,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxLearn.data, idLearn, 200);
+    filter.prepare_packet(&ctxLearn.data);
+
+    // Verify unicast works
+    uint32_t idTest = 0;
+    CanDefs::set_fields(&idTest, 0x123, Defs::MTI_VERIFY_NODE_ID_ADDRESSED,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxTest.data, idTest, 100, {0x04, 0x56});
+    filter.prepare_packet(&ctxTest.data);
+    EXPECT_TRUE(filter.is_matching(200));
+    EXPECT_FALSE(filter.is_matching(300));
+
+    // Send Verify Node ID Global (MTI 0x0490) with DLC=0.
+    uint32_t idVNG = 0;
+    CanDefs::set_fields(&idVNG, 0x123, Defs::MTI_VERIFY_NODE_ID_GLOBAL,
+        CanDefs::GLOBAL_ADDRESSED, CanDefs::NMRANET_MSG,
+        CanDefs::NORMAL_PRIORITY);
+    setup_frame(&ctxVNG.data, idVNG, 100, {}); // Empty payload -> DLC=0
+    filter.prepare_packet(&ctxVNG.data);
+
+    // Verify table flushed. Unicast should flood.
+    filter.prepare_packet(&ctxTest.data);
+    EXPECT_TRUE(filter.is_matching(200));
+    EXPECT_TRUE(filter.is_matching(300));
+}
+
 } // namespace openlcb

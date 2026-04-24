@@ -84,24 +84,58 @@ public:
         }
 
         const struct can_frame &can_frame = frame->frame();
+        uint32_t can_id = GET_CAN_FRAME_ID_EFF(can_frame);
 
-        // Update routing table with source info
-        NodeAlias src = get_source_address(can_frame);
+        // Check for Flush Conditions
+        // AME frame with no payload
+        if (CanDefs::get_frame_type(can_id) == CanDefs::CONTROL_MSG &&
+            CanDefs::get_control_field(can_id) == CanDefs::AME_FRAME &&
+            can_frame.can_dlc == 0)
+        {
+            routingTable_.clear();
+        }
+        // Verify Node ID Global with no payload
+        else if (CanDefs::get_frame_type(can_id) == CanDefs::NMRANET_MSG &&
+            CanDefs::get_mti(can_id) == Defs::MTI_VERIFY_NODE_ID_GLOBAL &&
+            can_frame.can_dlc == 0)
+        {
+            routingTable_.clear();
+        }
+
+        // Check for AMR (Alias Map Reset)
+        bool is_amr = (CanDefs::get_frame_type(can_id) == CanDefs::CONTROL_MSG &&
+            CanDefs::get_control_field(can_id) == CanDefs::AMR_FRAME);
+
+        if (is_amr)
+        {
+            NodeAlias src = get_source_address(can_frame);
+            routingTable_.erase(src);
+        }
+
+        // Check for CID frame
+        bool is_cid = CanDefs::is_cid_frame(can_id);
+
         uintptr_t src_port = reinterpret_cast<uintptr_t>(frame->skipMember_);
 
-        auto range = routingTable_.equal_range(src);
-        bool found = false;
-        for (auto it = range.first; it != range.second; ++it)
+        // Update routing table with source info
+        if (!is_cid && !is_amr)
         {
-            if (it->second == src_port)
+            NodeAlias src = get_source_address(can_frame);
+
+            auto range = routingTable_.equal_range(src);
+            bool found = false;
+            for (auto it = range.first; it != range.second; ++it)
             {
-                found = true;
-                break;
+                if (it->second == src_port)
+                {
+                    found = true;
+                    break;
+                }
             }
-        }
-        if (!found)
-        {
-            routingTable_.insert(std::make_pair(src, src_port));
+            if (!found)
+            {
+                routingTable_.insert(std::make_pair(src, src_port));
+            }
         }
 
         // Store source port for filtering
